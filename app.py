@@ -1,41 +1,67 @@
+
 import streamlit as st
-from PyPDF2 import PdfReader, PdfWriter
-from io import BytesIO
+from fpdf import FPDF
+import tempfile
+from spellchecker import SpellChecker
 
-def extract_text_from_pdf(pdf_file):
-    reader = PdfReader(pdf_file)
-    text = ''
-    for page in reader.pages:
-        text += page.extract_text()
-    return text
+# Initialize the spell checker
+spell = SpellChecker()
 
-def create_pdf_from_text(text):
-    writer = PdfWriter()
-    reader = PdfReader()
-    input_stream = BytesIO(text.encode('utf-8'))
-    reader.stream = input_stream
-    reader.numPages = 1
-    writer.add_page(reader.pages[0])
-    output_stream = BytesIO()
-    writer.write(output_stream)
-    return output_stream.getvalue()
+class PDF(FPDF):
+    def header(self):
+        self.set_font('Arial', 'B', 12)
+        self.cell(0, 10, 'Personalized CV', 0, 1, 'C')
 
-def main():
-    st.title("PDF Bewerk Webapp")
-    uploaded_file = st.file_uploader("Upload een PDF-bestand", type="pdf")
-    if uploaded_file is not None:
-        text = extract_text_from_pdf(uploaded_file)
-        st.text_area("PDF inhoud:", text, height=300)
-        edited_text = st.text_area("Bewerk de tekst:", text, height=300)
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
-        if st.button("Download gewijzigde PDF"):
-            modified_pdf = create_pdf_from_text(edited_text)
-            st.download_button(
-                label="Download PDF",
-                data=modified_pdf,
-                file_name="gewijzigde_document.pdf",
-                mime="application/pdf"
-            )
+# Helper function to create and download PDF
 
-if __name__ == "__main__":
-    main()
+def create_pdf(name, description, skills, image):
+    pdf = PDF()
+    pdf.add_page()
+
+    pdf.set_font('Arial', 'B', 16)
+    pdf.cell(0, 10, name, 0, 1, 'C')
+
+    if image:
+        pdf.image(image, x=10, y=30, w=50)
+
+    pdf.set_font('Arial', '', 12)
+    pdf.multi_cell(0, 10, f"Description: {description}")
+    pdf.multi_cell(0, 10, f"Skills: {', '.join(skills)}")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+        pdf.output(tmp_file.name)
+        return tmp_file.name
+
+# Streamlit app
+st.set_page_config(page_title="CV Maker", layout="wide")
+st.title("CV Maker")
+
+# Upload section
+uploaded_image = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg"])
+
+# Text inputs
+name = st.text_input("Name")
+description = st.text_area("Description")
+skills = st.text_input("Skills (comma-separated)")
+
+# Spell check
+description_words = description.split()
+incorrect_words = spell.unknown(description_words)
+if incorrect_words:
+    st.warning(f"Potential spelling mistakes: {', '.join(incorrect_words)}")
+
+# Generate PDF
+if st.button("Create PDF"):
+    pdf_file = create_pdf(name, description, skills.split(','), uploaded_image)
+    with open(pdf_file, "rb") as file:
+        st.download_button(
+            label="Download CV",
+            data=file,
+            file_name="cv.pdf",
+            mime="application/pdf"
+        )
